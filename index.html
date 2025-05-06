@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>台本マスター支援アプリ ver1.1</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background-color: #000;
+      color: white;
+      font-family: 'Press Start 2P', cursive;
+      margin: 0;
+      padding: 20px;
+      overflow-x: hidden;
+      transition: background-color 0.3s;
+    }
+
+    .window {
+      border: 4px solid white;
+      background-color: #222;
+      padding: 20px;
+      max-width: 600px;
+      margin: 20px auto;
+      min-height: 200px;
+      white-space: pre-wrap;
+      position: relative;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 18px;
+    }
+
+    h2 {
+      font-size: 14px;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+
+    p {
+      font-size: 12px;
+      line-height: 1.6;
+      margin: 0;
+      min-height: 20px;
+    }
+
+    .button-group {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    button {
+      font-family: 'Press Start 2P', cursive;
+      background-color: #000;
+      color: white;
+      border: 2px solid white;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 12px;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+
+    button:hover {
+      background-color: #333;
+      transform: scale(1.05);
+    }
+
+    textarea {
+      width: 100%;
+      max-width: 600px;
+      height: 150px;
+      margin: 20px auto;
+      display: block;
+      font-family: monospace;
+      font-size: 14px;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .note {
+      max-width: 600px;
+      margin: 10px auto 20px auto;
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: left;
+      border: 2px solid white;
+      padding: 10px;
+      background-color: #111;
+    }
+
+    .hidden-line {
+      cursor: pointer;
+      display: block;
+    }
+
+    .hidden-line:hover {
+      background-color: #444;
+    }
+
+    .mode-indicator,
+    .progress-indicator {
+      max-width: 600px;
+      margin: 10px auto;
+      text-align: center;
+      font-size: 12px;
+      border: 2px solid white;
+      padding: 5px;
+      background-color: #111;
+    }
+
+    .mode-indicator span {
+      font-weight: bold;
+      color: #00FF00;
+    }
+
+    .center {
+      text-align: center;
+      margin: 10px auto;
+    }
+
+    .cursor {
+      display: inline-block;
+      margin-top: 10px;
+      font-size: 14px;
+      animation: blink 1s steps(2, start) infinite;
+    }
+
+    @keyframes blink {
+      0% { opacity: 1; }
+      50% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <h1>台本マスター支援アプリ ver1.1</h1>
+
+  <div class="center">
+    <button onclick="toggleNote()">使い方</button>
+  </div>
+
+  <div id="noteSection" class="note hidden">
+    <p>このアプリでは、台本をシーンごとに覚えられます。<br>
+    「台本を読み込む」ボタンで台本を登録後、<strong>マスターモードでは1行目は表示され、2行目以降は伏せ字（□）になります。</strong><br>
+    隠れている行はクリックするとその行だけが表示され、クリック時に読み上げられます。<br>
+    ※シーンは「シーン1:」「シーン2:」のように記入してください。<br>
+    音声が不要の場合ミュートにして下さい。</p>
+  </div>
+
+  <textarea id="scriptInput" placeholder="ここに台本をコピペしてください。&#10;例:&#10;シーン1: 勇者が登場して「これから冒険だ！」と叫ぶ。&#10;シーン2: 魔王が現れて「我を倒せるものか！」と笑う。"></textarea>
+  <button onclick="loadScript(this)">台本を読み込む</button>
+
+  <div id="app" class="hidden">
+    <div id="modeIndicator" class="mode-indicator">
+      現在のモード: <span>台本モード</span>
+    </div>
+    <div id="progressIndicator" class="progress-indicator">
+      シーン 1 / 1
+    </div>
+
+    <div id="script-container" class="window"></div>
+
+    <div class="button-group">
+      <button onclick="prevScene()">← 前へ</button>
+      <button onclick="toggleMode()">モード切替</button>
+      <button onclick="nextScene()">次へ →</button>
+    </div>
+  </div>
+
+  <script>
+    let scriptData = [];
+    let isHidden = false;
+    let currentSceneIndex = 0;
+
+    const container = document.getElementById('script-container');
+    const appDiv = document.getElementById('app');
+    const modeIndicator = document.getElementById('modeIndicator').querySelector('span');
+    const progressIndicator = document.getElementById('progressIndicator');
+    const noteSection = document.getElementById('noteSection');
+
+    function toggleNote() {
+      noteSection.classList.toggle('hidden');
+    }
+
+    function loadScript(buttonElement) {
+      const inputText = document.getElementById('scriptInput').value.trim();
+      if (!inputText) {
+        alert('台本を入力してください。');
+        return;
+      }
+
+      const sceneRegex = /(シーン\d+[:：])([\s\S]*?)(?=シーン\d+[:：]|$)/g;
+      scriptData = [];
+      let match;
+      while ((match = sceneRegex.exec(inputText)) !== null) {
+        const sceneTitle = match[1].trim();
+        const sceneText = match[2].trim();
+        scriptData.push({ scene: sceneTitle, text: sceneText });
+      }
+
+      if (scriptData.length === 0) {
+        alert('シーンが見つかりませんでした。「シーン1:」のように書いてください。');
+        return;
+      }
+
+      isHidden = false;
+      currentSceneIndex = 0;
+      appDiv.classList.remove('hidden');
+      document.getElementById('scriptInput').classList.add('hidden');
+      buttonElement.style.display = 'none';
+
+      updateModeIndicator();
+      updateProgress();
+      renderScene();
+    }
+
+    async function renderScene(hideText = false) {
+      container.innerHTML = '';
+      const item = scriptData[currentSceneIndex];
+
+      const sceneEl = document.createElement('h2');
+      sceneEl.textContent = item.scene;
+      container.appendChild(sceneEl);
+
+      const lines = item.text.split('\n');
+
+      for (let index = 0; index < lines.length; index++) {
+        const line = lines[index];
+        const p = document.createElement('p');
+        container.appendChild(p);
+
+        if (hideText && index > 0) {
+          const maskedLine = line.replace(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/g, '□');
+          p.textContent = maskedLine;
+          p.classList.add('hidden-line');
+          p.addEventListener('click', async () => {
+            await typeWriter(p, line);
+            p.classList.remove('hidden-line');
+            speakText(line);
+          });
+        } else {
+          await typeWriter(p, line);
+        }
+      }
+
+      const cursor = document.createElement('div');
+      cursor.className = 'cursor';
+      cursor.textContent = '▶';
+      container.appendChild(cursor);
+
+      if (isHidden) {
+        if (lines.length > 0) {
+          speakText(lines[0]);
+        }
+      } else {
+        const fullText = lines.join('\n');
+        speakText(fullText);
+      }
+    }
+
+    function toggleMode() {
+      isHidden = !isHidden;
+      updateModeIndicator();
+      renderScene(isHidden);
+    }
+
+    function updateModeIndicator() {
+      if (isHidden) {
+        modeIndicator.textContent = 'マスターモード';
+        modeIndicator.style.color = '#FFD700';
+      } else {
+        modeIndicator.textContent = '台本モード';
+        modeIndicator.style.color = '#00FF00';
+      }
+    }
+
+    function updateProgress() {
+      progressIndicator.textContent = `シーン ${currentSceneIndex + 1} / ${scriptData.length}`;
+    }
+
+    function nextScene() {
+      currentSceneIndex = (currentSceneIndex + 1) % scriptData.length;
+      updateProgress();
+      renderScene(isHidden);
+    }
+
+    function prevScene() {
+      currentSceneIndex = (currentSceneIndex - 1 + scriptData.length) % scriptData.length;
+      updateProgress();
+      renderScene(isHidden);
+    }
+
+    function speakText(text) {
+      if (!text.trim()) return;
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voices = window.speechSynthesis.getVoices();
+      const jpVoice = voices.find(voice => voice.lang.startsWith('ja'));
+      if (jpVoice) {
+        utterance.voice = jpVoice;
+      }
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    }
+
+    window.speechSynthesis.onvoiceschanged = () => {};
+
+    async function typeWriter(element, text) {
+      element.textContent = '';
+      for (let i = 0; i < text.length; i++) {
+        element.textContent += text.charAt(i);
+        await new Promise(resolve => setTimeout(resolve, 30));
+      }
+    }
+  </script>
+</body>
+</html>
